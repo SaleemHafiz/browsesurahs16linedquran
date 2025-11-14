@@ -392,6 +392,20 @@
           renderSurahs(e.target.value)
         );
 
+        // Press Enter in search bar to open first filtered surah
+        searchBar.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            const firstSurah = surahList.querySelector(".surah");
+            if (firstSurah) {
+              firstSurah.click(); // simulate click
+              firstSurah.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+            }
+          }
+        });
+
         // Load PDF (local only)
         async function loadPDF(fileURL) {
           pdfDoc = await pdfjsLib.getDocument(fileURL).promise;
