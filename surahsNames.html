@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Surah PDF Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+    <style>
+      body {
+        font-family: Arial;
+        margin: 0;
+        height: 100vh;
+        display: flex;
+      }
+      #main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+      #sidebar {
+        width: 320px;
+        background: #f0f8ff;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #ccc;
+        transition: transform 0.3s ease;
+      }
+      #sidebar.closed {
+        transform: translateX(-100%);
+      }
+      #listWrapper {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+      }
+      #pdfContainer {
+        flex: 1;
+        overflow-y: auto;
+        background: #fff;
+        padding: 10px;
+      }
+
+      .surah {
+        padding: 6px 10px;
+        margin: 5px 0;
+        background: #3498db;
+        color: white;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .surah:hover {
+        background: #2980b9;
+      }
+      .info {
+        font-weight: normal;
+        color: #ddd;
+        margin-left: 5px;
+        font-size: 0.9em;
+      }
+      #searchBar {
+        width: 100%;
+        padding: 6px;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        font-size: 1em;
+      }
+
+      #bottomWrapper {
+        position: sticky;
+        bottom: 0;
+        background: #f0f8ff;
+        padding: 5px;
+        border-top: 1px solid #ccc;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      #controlsWrapper {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      #controls {
+        display: flex;
+        flex: 1;
+        gap: 5px;
+      }
+      #controls input[type="number"],
+      #controls input[type="file"] {
+        flex: 1;
+        font-size: 0.9em;
+        padding: 3px 5px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+      }
+      #toggleControls,
+      #downloadPDF {
+        cursor: pointer;
+        font-size: 1.2em;
+        user-select: none;
+        background: #3498db;
+        color: white;
+        padding: 5px 8px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #downloadPDF {
+        background: #2ecc71;
+      }
+      #pdfBanner {
+        display: none;
+        background: #ffcc00;
+        color: #333;
+        padding: 5px 10px;
+        border-radius: 5px;
+        text-align: center;
+        font-size: 0.9em;
+      }
+
+      /* Responsive mobile toggle */
+      #mobileToggle {
+        display: none;
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        background: #3498db;
+        color: white;
+        font-size: 1.5em;
+        padding: 10px;
+        border-radius: 50%;
+        z-index: 100;
+        cursor: pointer;
+      }
+
+      canvas {
+        display: block;
+        margin: 10px auto;
+        border: 1px solid #ccc;
+      }
+
+      @media (max-width: 768px) {
+        #sidebar {
+          position: fixed;
+          z-index: 99;
+          height: 100vh;
+        }
+        #mobileToggle {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="main">
+      <div id="sidebar">
+        <div id="listWrapper">
+          <input type="text" id="searchBar" placeholder="Search surah..." />
+          <div id="surahList"></div>
+        </div>
+        <div id="bottomWrapper">
+          <div id="pdfBanner">Please select your Quran PDF to continue</div>
+          <div id="controlsWrapper">
+            <div id="toggleControls"><i class="fa fa-chevron-up"></i></div>
+            <div id="controls">
+              <input
+                type="number"
+                id="zeroError"
+                value="1"
+                min="0"
+                title="Page offset (zero error)"
+              />
+              <input
+                type="file"
+                id="pdfInput"
+                accept="application/pdf"
+                title="Select Quran PDF"
+              />
+              <div id="downloadPDF" title="Open online Quran">
+                <i class="fa fa-download"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="pdfContainer"></div>
+    </div>
+
+    <div id="mobileToggle"><i class="fa fa-bars"></i></div>
+
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+    </script>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const onlinePDFLink =
+          "https://archive.org/details/AlQuran16LinesTajweedi/page/n339/mode/2up";
+
+        const surahs = [
+          { number: 1, name: "Fatihah", juz: 1, page: 2 },
+          { number: 2, name: "Baqarah", juz: 1, page: 3 },
+          { number: 3, name: "Imran", juz: 2, page: 46 },
+          { number: 4, name: "Nisa", juz: 3, page: 70 },
+          { number: 5, name: "Maidah", juz: 3, page: 97 },
+          { number: 6, name: "An’am", juz: 4, page: 116 },
+          { number: 7, name: "Araf", juz: 5, page: 137 },
+          { number: 8, name: "Anfal", juz: 6, page: 160 },
+          { number: 9, name: "Tawbah", juz: 7, page: 169 },
+          { number: 10, name: "Yunus", juz: 11, page: 188 },
+          { number: 11, name: "Hud", juz: 11, page: 200 },
+          { number: 12, name: "Yusuf", juz: 12, page: 213 },
+          { number: 13, name: "Ra’d", juz: 13, page: 225 },
+          { number: 14, name: "Ibrahim", juz: 13, page: 231 },
+          { number: 15, name: "Hijr", juz: 14, page: 236 },
+          { number: 16, name: "Nahl", juz: 14, page: 241 },
+          { number: 17, name: "Isra", juz: 15, page: 255 },
+          { number: 18, name: "Kahf", juz: 16, page: 265 },
+          { number: 19, name: "Maryam", juz: 16, page: 276 },
+          { number: 20, name: "TaHa", juz: 16, page: 282 },
+          { number: 21, name: "Anbiya", juz: 17, page: 291 },
+          { number: 22, name: "Hajj", juz: 17, page: 300 },
+          { number: 23, name: "Muminun", juz: 18, page: 309 },
+          { number: 24, name: "Nur", juz: 18, page: 316 },
+          { number: 25, name: "Furqan", juz: 18, page: 325 },
+          { number: 26, name: "Shuara", juz: 19, page: 331 },
+          { number: 27, name: "Naml", juz: 19, page: 340 },
+          { number: 28, name: "Qasas", juz: 20, page: 348 },
+          { number: 29, name: "Ankabut", juz: 21, page: 358 },
+          { number: 30, name: "Rum", juz: 21, page: 365 },
+          { number: 31, name: "Luqman", juz: 21, page: 371 },
+          { number: 32, name: "Sajdah", juz: 21, page: 374 },
+          { number: 33, name: "Ahzab", juz: 22, page: 377 },
+          { number: 34, name: "Saba", juz: 23, page: 386 },
+          { number: 35, name: "Fatir", juz: 23, page: 392 },
+          { number: 36, name: "Yasin", juz: 23, page: 397 },
+          { number: 37, name: "Saffat", juz: 24, page: 402 },
+          { number: 38, name: "Sad", juz: 24, page: 409 },
+          { number: 39, name: "Zumar", juz: 24, page: 413 },
+          { number: 40, name: "Ghafir/Mumin", juz: 25, page: 421 },
+          { number: 41, name: "Fussilat/HaMeemSajdah", juz: 25, page: 430 },
+          { number: 42, name: "Shura", juz: 25, page: 435 },
+          { number: 43, name: "Zukhruf", juz: 25, page: 441 },
+          { number: 44, name: "Dukhan", juz: 25, page: 447 },
+          { number: 45, name: "Jathiyah", juz: 25, page: 449 },
+          { number: 46, name: "Ahqaf", juz: 26, page: 453 },
+          { number: 47, name: "Muhammad", juz: 26, page: 457 },
+          { number: 48, name: "Fath", juz: 26, page: 461 },
+          { number: 49, name: "Hujurat", juz: 26, page: 464 },
+          { number: 50, name: "Qaf", juz: 26, page: 467 },
+          { number: 51, name: "Zariyat", juz: 26, page: 469 },
+          { number: 52, name: "Tur", juz: 27, page: 472 },
+          { number: 53, name: "Najm", juz: 27, page: 474 },
+          { number: 54, name: "Qamar", juz: 27, page: 476 },
+          { number: 55, name: "Rahman", juz: 27, page: 479 },
+          { number: 56, name: "Waqiah", juz: 27, page: 482 },
+          { number: 57, name: "Hadid", juz: 27, page: 485 },
+          { number: 58, name: "Mujadila", juz: 28, page: 489 },
+          { number: 59, name: "Hashr", juz: 28, page: 492 },
+          { number: 60, name: "Mumtahanah", juz: 28, page: 496 },
+          { number: 61, name: "Saff", juz: 28, page: 498 },
+          { number: 62, name: "Jumah", juz: 28, page: 500 },
+          { number: 63, name: "Munafiqun", juz: 28, page: 501 },
+          { number: 64, name: "Taghabun", juz: 28, page: 503 },
+          { number: 65, name: "Talaq", juz: 28, page: 505 },
+          { number: 66, name: "Tahrim", juz: 28, page: 507 },
+          { number: 67, name: "Mulk", juz: 29, page: 509 },
+          { number: 68, name: "Qalam", juz: 30, page: 511 },
+          { number: 69, name: "Haaqqah", juz: 30, page: 513 },
+          { number: 70, name: "Maarij", juz: 30, page: 515 },
+          { number: 71, name: "Nuh", juz: 30, page: 517 },
+          { number: 72, name: "Jinn", juz: 30, page: 519 },
+          { number: 73, name: "Muzzammil", juz: 30, page: 521 },
+          { number: 74, name: "Muddathir", juz: 30, page: 522 },
+          { number: 75, name: "Qiyamah", juz: 30, page: 524 },
+          { number: 76, name: "Insaan/Dahr", juz: 30, page: 525 },
+          { number: 77, name: "Mursalat", juz: 30, page: 527 },
+          { number: 78, name: "Naba", juz: 30, page: 529 },
+          { number: 79, name: "Nazi’at", juz: 30, page: 530 },
+          { number: 80, name: "Abasa", juz: 30, page: 531 },
+          { number: 81, name: "Takwir", juz: 30, page: 533 },
+          { number: 82, name: "Infitar", juz: 30, page: 533 },
+          { number: 83, name: "Mutaffifin", juz: 30, page: 534 },
+          { number: 84, name: "Inshiqaq", juz: 30, page: 535 },
+          { number: 85, name: "Burooj", juz: 30, page: 536 },
+          { number: 86, name: "Tariq", juz: 30, page: 537 },
+          { number: 87, name: "Aala", juz: 30, page: 538 },
+          { number: 88, name: "Ghashiyah", juz: 30, page: 538 },
+          { number: 89, name: "Fajr", juz: 30, page: 539 },
+          { number: 90, name: "Balad", juz: 30, page: 540 },
+          { number: 91, name: "Shams", juz: 30, page: 541 },
+          { number: 92, name: "Layl", juz: 30, page: 541 },
+          { number: 93, name: "Duha", juz: 30, page: 542 },
+          { number: 94, name: "Inshiraah/Sharh", juz: 30, page: 542 },
+          { number: 95, name: "Tin", juz: 30, page: 543 },
+          { number: 96, name: "Alaq", juz: 30, page: 543 },
+          { number: 97, name: "Qadr", juz: 30, page: 544 },
+          { number: 98, name: "Bayyinah", juz: 30, page: 544 },
+          { number: 99, name: "Zilzaal/Zalzalah", juz: 30, page: 545 },
+          { number: 100, name: "Adiyat", juz: 30, page: 545 },
+          { number: 101, name: "Qariah", juz: 30, page: 545 },
+          { number: 102, name: "Takathur", juz: 30, page: 546 },
+          { number: 103, name: "Asr", juz: 30, page: 546 },
+          { number: 104, name: "Humazah", juz: 30, page: 546 },
+          { number: 105, name: "Fil", juz: 30, page: 547 },
+          { number: 106, name: "Quraish", juz: 30, page: 547 },
+          { number: 107, name: "Maaun", juz: 30, page: 547 },
+          { number: 108, name: "Kawthar", juz: 30, page: 547 },
+          { number: 109, name: "Kafirun", juz: 30, page: 548 },
+          { number: 110, name: "Nasr", juz: 30, page: 548 },
+          { number: 111, name: "Masad", juz: 30, page: 548 },
+          { number: 112, name: "Ikhlas", juz: 30, page: 548 },
+          { number: 113, name: "Falaq", juz: 30, page: 549 },
+          { number: 114, name: "Nas", juz: 30, page: 549 },
+        ];
+
+        let pdfDoc = null;
+        const pdfContainer = document.getElementById("pdfContainer");
+        const surahList = document.getElementById("surahList");
+        const searchBar = document.getElementById("searchBar");
+        const zeroInput = document.getElementById("zeroError");
+        const pdfInput = document.getElementById("pdfInput");
+        const controls = document.getElementById("controls");
+        const toggleControls = document.getElementById("toggleControls");
+        const pdfBanner = document.getElementById("pdfBanner");
+        const downloadPDF = document.getElementById("downloadPDF");
+        const sidebar = document.getElementById("sidebar");
+        const mobileToggle = document.getElementById("mobileToggle");
+
+        let controlsVisible = true;
+
+        // Restore zero-error
+        const savedZero = localStorage.getItem("zeroError");
+        if (savedZero) zeroInput.value = savedZero;
+        zeroInput.addEventListener("input", () =>
+          localStorage.setItem("zeroError", zeroInput.value)
+        );
+
+        // Toggle controls
+        toggleControls.addEventListener("click", () => {
+          controlsVisible = !controlsVisible;
+          controls.style.display = controlsVisible ? "flex" : "none";
+          toggleControls.innerHTML = controlsVisible
+            ? '<i class="fa fa-chevron-up"></i>'
+            : '<i class="fa fa-chevron-down"></i>';
+        });
+
+        // Download/open online PDF
+        downloadPDF.addEventListener("click", () =>
+          window.open(onlinePDFLink, "_blank")
+        );
+
+        // Render surah list
+        function renderSurahs(filter = "") {
+          surahList.innerHTML = "";
+          surahs
+            .filter((s) => s.name.toLowerCase().includes(filter.toLowerCase()))
+            .forEach((surah) => {
+              const div = document.createElement("div");
+              div.className = "surah";
+              div.innerHTML = `${surah.name} <span class="info">Jz ${surah.juz} Pg ${surah.page}</span>`;
+              div.addEventListener("click", () => {
+                if (!pdfDoc) {
+                  pdfBanner.style.display = "block";
+                  controls.style.display = "flex";
+                  toggleControls.innerHTML = '<i class="fa fa-chevron-up"></i>';
+                  controlsVisible = true;
+                  return;
+                }
+                const pageOffset = parseInt(zeroInput.value) || 0;
+                const pdfPageNum = surah.page + pageOffset;
+                const pageEl = document.getElementById("page-" + pdfPageNum);
+                if (pageEl) pageEl.scrollIntoView({ behavior: "smooth" });
+              });
+              surahList.appendChild(div);
+            });
+        }
+        renderSurahs();
+        searchBar.addEventListener("input", (e) =>
+          renderSurahs(e.target.value)
+        );
+
+        // Load PDF (local only)
+        async function loadPDF(fileURL) {
+          pdfDoc = await pdfjsLib.getDocument(fileURL).promise;
+          pdfContainer.innerHTML = "";
+          for (let i = 1; i <= pdfDoc.numPages; i++) {
+            const page = await pdfDoc.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement("canvas");
+            canvas.id = "page-" + i;
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            pdfContainer.appendChild(canvas);
+            const context = canvas.getContext("2d");
+            page.render({ canvasContext: context, viewport: viewport });
+          }
+        }
+
+        // Load local file
+        pdfInput.addEventListener("change", async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const fileURL = URL.createObjectURL(file);
+          pdfBanner.style.display = "none";
+          await loadPDF(fileURL);
+          controls.style.display = "none";
+          controlsVisible = false;
+          toggleControls.innerHTML = '<i class="fa fa-chevron-down"></i>';
+        });
+
+        // Mobile sidebar toggle
+        mobileToggle.addEventListener("click", () =>
+          sidebar.classList.toggle("closed")
+        );
+      });
+    </script>
+  </body>
+</html>
